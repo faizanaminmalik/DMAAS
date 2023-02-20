@@ -1,4 +1,5 @@
 ﻿# process commandline arguments
+# ./protectPhysical.ps1 -physFQDN 192.168.1.133 -inclusions '/C/Temp','/E/New Folder/','/E/Path2' -startTime 23:00 -timeZone 'Asia/Calcutta'
 [CmdletBinding()]
 param (
     [Parameter()][string]$username = 'DMaaS',
@@ -11,14 +12,14 @@ param (
     [Parameter()][string]$qosPolicy = 'kBackupSSD',  # QoS policy optimizes throughput performance (default is kBackupSSD)
     [Parameter()][bool]$abort = $false, # abort during blackout periods (default is false)
     #[Parameter()][string]$environment = 'kPhysical',  # environment type (kPhysical, kVMware, kAWS, kO365, kNetapp, kSQL, kOracle) (default is kPhysical)
-    [Parameter()][string]$volumes = '$ALL_LOCAL_DRIVES',  # which volumes to backup
+    [Parameter()][string]$volumes = '',  # which volumes to backup
     [Parameter()][bool]$autoProtected = $true,  # whether Physical objects are autoProtected (default is true)
     [Parameter()][bool]$skipNested = $false,  # whether to skip backing up nested volumes (default is false)
     [Parameter()][bool]$usePathLevel = $true,  # whether to use Path Level Skip Nested Volume Setting (default is true)
     [Parameter()][bool]$nasSymlink = $false,  # whether to follow NAS Symlink targets (default is false)
-    [Parameter()][bool]$quiesce = $true,  # optional whether to quiesce the backups (Default is true) 
-    [Parameter()][bool]$contOnFail = $true,  # optional whether to continue on quiesce failure (Default is true) 
-    [Parameter()][bool]$sourceSideDedup = $false,  # optional whether to perform Source Side Deduplication (Default is false) 
+    [Parameter()][bool]$quiesce = $true,  # optional whether to quiesce the backups (Default is true)
+    [Parameter()][bool]$contOnFail = $true,  # optional whether to continue on quiesce failure (Default is true)
+    [Parameter()][bool]$sourceSideDedup = $false,  # optional whether to perform Source Side Deduplication (Default is false)
     [Parameter()][bool]$index = $false,  # optional whether objects are indexed (default is false)
     [Parameter()][bool]$skipPhysicalRDMDisks = $false,  # optional whether to skip backing up Physical RDM Disks (Default is false)
     [Parameter()][string]$startTime = '04:00',  # e.g. 23:30 for 11:30 PM
@@ -28,7 +29,8 @@ param (
     [Parameter()][string]$objectProtectionType = 'kFile', # default 'America/New_York'
     [Parameter()][int]$incSLA = 66,  # incremental SLA minutes
     [Parameter()][int]$fullSLA = 127,  # full SLA minutes
-    [Parameter(Mandatory = $False)][bool]$deleteAllSnapshots = $False  # whether all Snapshots are deleted (default to $False)
+    [Parameter(Mandatory = $False)][bool]$deleteAllSnapshots = $False,  # whether all Snapshots are deleted (default to $False)
+    [Parameter()][array]$inclusions =''  # comma separarated inclusion list eg -inclusions '/C/Users/Faizan','/C/Temp/,'/E/New Movies/'
 )
 
 # outfile
@@ -81,7 +83,7 @@ $headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
 #test API Connection
 Write-host "Testing API Connection...`n"
 $headers.Add("apiKey", "$apiKey")
-$apiTest = Invoke-RestMethod 'https://helios.cohesity.com/irisservices/api/v1/public/mcm/clusters/info' -Method 'GET' -Headers $headers 
+$apiTest = Invoke-RestMethod 'https://helios.cohesity.com/irisservices/api/v1/public/mcm/clusters/info' -Method 'GET' -Headers $headers
 
 if(!$apiTest){
     write-host "Invalid API Key" -ForegroundColor Yellow
@@ -94,7 +96,7 @@ Write-host "Validating Tenant ID...`n"
 $headers.Add("accept", "application/json, text/plain, */*")
 #$headers.Add('content-type: application/json')
 $tenant = Invoke-RestMethod 'https://helios.cohesity.com/irisservices/api/v1/mcm/userInfo' -Method 'GET' -Headers $headers
-$tenantId = $tenant.user.profiles.tenantId 
+$tenantId = $tenant.user.profiles.tenantId
 Write-host "Tenant ID: " $tenantId
 
 # validate DMaaS Region ID
@@ -121,7 +123,7 @@ $headers.Add("Content-Type", "application/json")
 
 
 # Write-Host "Finding protection policy"
-# $policy = Invoke-RestMethod "https://helios.cohesity.com/v2/mcm/data-protect/policies?types=DMaaSPolicy" -Method 'GET' -Headers $headers 
+# $policy = Invoke-RestMethod "https://helios.cohesity.com/v2/mcm/data-protect/policies?types=DMaaSPolicy" -Method 'GET' -Headers $headers
 
 # foreach($pol in $policy.policies){
 #     if($pol.policies.name -eq "$policyName"){
@@ -163,7 +165,7 @@ foreach($physServer in $physServersToAdd){
     #     exit
     # }
 
-    # $source = $sources.sources 
+    # $source = $sources.sources
 
     $sourceId = $source.sourceInfoList.registrationId
     $regId = $sourceId.split(':')
@@ -179,14 +181,14 @@ foreach($physServer in $physServersToAdd){
 
     $object = (api get -v2 data-protect/search/protected-objects).objects | Where-Object name -eq $physServer
     if($object){
-        write-host "Unprotecting $physServer in order to assign new Protection configuration." 
+        write-host "Unprotecting $physServer in order to assign new Protection configuration."
 
         # configure unprotection parameters
         $unProtectionParams = @{
             "action" = "UnProtect";
             "objectActionKey" = $object.environment;
             "unProtectParams" = @{
-                "objects" = @( 
+                "objects" = @(
                     @{
                         "id" = $object.id;
                         "deleteAllSnapshots" = $deleteAllSnapshots;
@@ -198,7 +200,7 @@ foreach($physServer in $physServersToAdd){
         }
 
         # unprotect objects
-        $unprotectResponse = api post -v2 data-protect/protected-objects/actions $unProtectionParams 
+        $unprotectResponse = api post -v2 data-protect/protected-objects/actions $unProtectionParams
         $unprotectResponse | out-file -filepath ./$outfileName -Append
         Write-Host "Unprotected $physServer"
     }
@@ -207,7 +209,7 @@ foreach($physServer in $physServersToAdd){
     #---------------------------------------------------------------------------------------------------------------#
 
 
-    # configure protection parameters 
+    # configure protection parameters
 
     # $body = "{`"policyId`":`"$policyId`",`"startTime`":{`"hour`":$hour,`"minute`":$minute,`"timeZone`":`"$timeZone`"},`"priority`":`"$priority`",`"sla`":[{`"backupRunType`":`"$backupRunTypeFull`",`"slaMinutes`":$fullSLA},{`"backupRunType`":`"$backupRunTypeInc`",`"slaMinutes`":$incSLA}],`"qosPolicy`":`"$qosPolicy`",`"abortInBlackouts`":$abort,`"environment`":`"$environment`",`"physicalParams`":{`"objectProtectionType`":`"$objectProtectionType`",`"fileObjectProtectionTypeParams`":{`"indexingPolicy`":{`"enableIndexing`":$index,`"includePaths`":[],`"excludePaths`":[]},`"objects`":[{`"id`":$regId,`"filePaths`":[{`"includedPath`":`"$volumes`",`"excludedPaths`":[],`"skipNestedVolumes`":$skipNested}],`"usesPathLevelSkipNestedVolumeSetting`":$usePathLevel,`"nestedVolumeTypesToSkip`":[],`"followNasSymlinkTarget`":$nasSymlink}],`"performSourceSideDeduplication`":$sourceSideDedup,`"quiesce`":$quiesce,`"continueOnQuiesceFailure`":$contOnFail,`"dedupExclusionSourceIds`":[],`"globalExcludePaths`":[]}}}"
 
@@ -247,13 +249,7 @@ foreach($physServer in $physServersToAdd){
                     @{
                         "id"=$regId;
                         "isAutoprotected"= $autoProtected;
-                        "filePaths"= @(
-                        @{
-                            "includedPath"='$ALL_LOCAL_DRIVES';
-                            "excludedPaths"= @();
-                            "skipNestedVolumes"=$skipNested
-                            }
-                        )
+                        "filePaths"= @() #Will be updated as per cmdline args
                         "usesPathLevelSkipNestedVolumeSetting"=$usePathLevel;
                         "nestedVolumeTypesToSkip"= @();
                         "followNasSymlinkTarget"=$nasSymlink
@@ -270,15 +266,47 @@ foreach($physServer in $physServersToAdd){
     )
 }
 
+
+
+# *********************************************** Inclusion Logic Start *****************************************************************************
+#Faizan
+# At the end of this Logic Section we will have $filePaths populated with relevant data of inclusions
+
+if ($inclusions -ne '')
+{
+    foreach($pol in $inclusions)
+    {
+       # $body.objects.physicalParams.fileObjectProtectionTypeParams.objects[0].filePaths = @($body.objects.physicalParams.fileObjectProtectionTypeParams.objects[0].filePaths + @{
+
+       # $body.objects.physicalParams.fileObjectProtectionTypeParams.objects[0].filePaths += (@{
+        ($body.objects.physicalParams.fileObjectProtectionTypeParams.objects | where {$_.ContainsKey('filePaths')}).filePaths += (@{
+
+        "includedPath"=$pol;
+        "excludedPaths"= @();
+        "skipNestedVolumes"=$skipNested
+        })
+}
+}else{
+    Write-Host "Inclusion List Empty $inclusions! All Drives will be Protected" -ForegroundColor Yellow
+    ($body.objects.physicalParams.fileObjectProtectionTypeParams.objects | where {$_.ContainsKey('filePaths')}).filePaths += (@{
+        "includedPath"='$ALL_LOCAL_DRIVES';
+        "excludedPaths"= @();
+        "skipNestedVolumes"=$skipNested
+    })
+}
+
+# *********************************************** Inclusion Logic End *****************************************************************************
+
+
     if($source){
         Write-Host "Protecting $physServer"
         # $response = api post -v2 data-protect/protected-objects $protectionParams
-        write-host = $body 
-        # $bodyJson = $body | ConvertTo-Json 
-        # write-host "$bodyJson"    
-        
+        write-host = $body
+        # $bodyJson = $body | ConvertTo-Json
+        # write-host "$bodyJson"
+
         # $response = Invoke-RestMethod "https://helios.cohesity.com/v2/data-protect/protected-objects/$regid" -Method 'PUT' -Headers $headers -Body $bodyJson
-        
+
         $response = api post -v2 data-protect/protected-objects $body
         $response | out-file -filepath ./$outfileName -Append
         Write-Host "Protected $physServer"
@@ -286,3 +314,4 @@ foreach($physServer in $physServersToAdd){
         Write-Host "Physical Server $physServer not found" -ForegroundColor Yellow
     }
 }
+$body.objects.physicalParams.fileObjectProtectionTypeParams.objects[0].filePaths
