@@ -25,6 +25,8 @@ Run the main script like so:
 
 ```powershell
 ./protectDMaaSphysicalSources.ps1 -apiKey API-KEY -regionId us-east-2 -policy "Policy-Name" -startTime "00:00" -timeZone Americal/Chicago -physFQDN "source FQDN"
+eg ./protectDMaaSphysicalSources.ps1 -physFQDN 192.168.1.133 -inclusions '/C/Temp','/E/New Folder/','/E/Path2' -startTime 23:00 -timeZone 'Asia/Calcutta'
+
 ```
 
 ## Parameters
@@ -35,6 +37,7 @@ Run the main script like so:
 * -startTime: Start time for incremental schedule format 00:00
 * -timeZone: Time zone to be used for the start time
 * -physFQDN: Source FQDN
+* -inclusions: Comma Separated inclusion Paths
 
 ## Authenticating to DMaaS
 
