@@ -314,4 +314,4 @@ if ($inclusions -ne '')
         Write-Host "Physical Server $physServer not found" -ForegroundColor Yellow
     }
 }
-$body.objects.physicalParams.fileObjectProtectionTypeParams.objects[0].filePaths
+$body.objects.physicalParams.fileObjectProtectionTypeParams.objects[0].filePaths.includedPath
